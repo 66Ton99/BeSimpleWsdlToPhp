@@ -1,8 +1,9 @@
 language: php
 
 php:
-  - 5.3
+#  - 5.3 # test does not work because of libxml_set_external_entity_loader()
   - 5.4
+  - 5.5
 
 before_script:
   - wget http://getcomposer.org/composer.phar

@@ -1,4 +1,4 @@
-# BeSimpleWsdlToPhp
+# BeSimpleWsdlToPhp [![Build Status](https://travis-ci.org/66Ton99/BeSimpleWsdlToPhp.png?branch=master)](https://travis-ci.org/66Ton99/BeSimpleWsdlToPhp)
 
 wsdl2php - takes a WSDL document and generates PHP code from which to implement
 a service. The WSDL document must have a valid portType element, but it does not
