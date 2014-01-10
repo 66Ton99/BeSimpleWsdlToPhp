@@ -56,9 +56,13 @@ class ClassGenerator extends AbstractClassGenerator
      */
     protected function generateClassName($data)
     {
-        $class = 'class ' . $this->createValidClassName($data['name'], $data['namespace']);
+        $className = $this->createValidClassName($data['name'], $data['namespace']);
+        $class = 'class ' . $className;
         if (!empty($data['parent'])) {
-            $class .= ' extends ' . $this->createValidClassName($data['parent'], $data['namespace']);
+            $parentClassName = $this->createValidClassName($data['parent'], $data['namespace']);
+            if ($className != $parentClassName) {
+                $class .= ' extends ' . $parentClassName;
+            }
         }
 
         return $class;
@@ -279,6 +283,7 @@ class ClassGenerator extends AbstractClassGenerator
         $lines[] = $this->spaces . ' */';
         $lines[] = $this->spaces . 'public function get' . ucfirst($property['name']) . '()';
         $lines[] = $this->spaces . '{';
+
         if (!in_array($property['phpType'], self::$phpTypes) &&
             !empty($this->wsdlTypes[$property['phpType']]['properties'][0]['name']) &&
             $this->getOption('instance_on_getter')

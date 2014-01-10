@@ -83,6 +83,7 @@ class WsdlParser
      */
     protected $options = array(
         'wsdl2java_style' => true,
+        'empty_parameter_name' => '_',
     );
 
     /**
@@ -235,11 +236,11 @@ class WsdlParser
         $outputMessage = $operation->getElementsByTagName('output')->item(0)->getAttribute('message');
 
         list($prefix, $inputType) = $this->getTypeName($this->resolveMessageType($inputMessage));
-        $tns = rtrim($this->domDocument->lookupNamespaceURI($prefix), '/').'/';
+        $tns = $this->trimTypeNs($this->domDocument->lookupNamespaceURI($prefix));
         $inputTypeNS = $tns.$inputType;
 
         list($prefix, $outputType) = $this->getTypeName($this->resolveMessageType($outputMessage));
-        $tns = rtrim($this->domDocument->lookupNamespaceURI($prefix), '/').'/';
+        $tns = $this->trimTypeNs($this->domDocument->lookupNamespaceURI($prefix));
         $outputTypeNS = $tns.$outputType;
 
         $this->getWsdlTypes();
@@ -313,6 +314,65 @@ class WsdlParser
     }
 
     /**
+     * Recursive merge 2 or more arrays
+     *
+     * @return array
+     */
+    public static function arrayMergeRecursive()
+    {
+        if (func_num_args() < 2) {
+            trigger_error(__FUNCTION__ . ' needs two or more array arguments', E_USER_WARNING);
+            return null;
+        }
+        $arrays = func_get_args();
+        $merged = array();
+        while ($arrays) {
+            $array = array_shift($arrays);
+            if (!is_array($array)) {
+                trigger_error(__FUNCTION__ . ' encountered a non array argument', E_USER_WARNING);
+                return null;
+            }
+            if (!$array) continue;
+            foreach ($array as $key => $value) {
+                if (is_string($key)) {
+                    if (is_array($value) && array_key_exists($key, $merged) && is_array($merged[$key])) {
+                        $merged[$key] = static::arrayMergeRecursive($merged[$key], $value);
+                    } else {
+                        $merged[$key] = $value;
+                    }
+                } else {
+                    $merged[] = $value;
+                }
+            }
+        }
+        return $merged;
+    }
+
+    /**
+     * Add type to the $typeList
+     *
+     * @param array $typeList
+     * @param string $newTypeName
+     * @param array $newType
+     */
+    protected function addNewTypeIntoList(&$typeList, $newTypeName, $newType)
+    {
+        if (!empty($typeList[$newTypeName])) {
+            $this->addError(
+                "Type: '{$newTypeName}' in file '{$newType['wsdl']}' already exist",
+                0,
+                $typeList[$newTypeName]['wsdl']
+            );
+            $typeList[$newTypeName] = $this->arrayMergeRecursive(
+                $typeList[$newTypeName],
+                $newType
+            );
+        } else {
+            $typeList[$newTypeName] = $newType;
+        }
+    }
+
+    /**
      * Extracts WSDL types from WSDL file.
      *
      * @param string $query XPATH query
@@ -339,7 +399,7 @@ class WsdlParser
 
                 $wsdlType = null;
                 $attrName = $element->getAttribute('name');
-                $wsdlTypeName = rtrim($targetNamespace, '/').'/'.$attrName;
+                $wsdlTypeName = $this->trimTypeNs($targetNamespace).$attrName;
 
                 // element can be declared directly
                 if ($element->hasChildNodes()) {
@@ -348,12 +408,13 @@ class WsdlParser
                         $schema,
                         $namespace
                     );
-                    $wsdlTypes[$wsdlTypeName] = $wsdlType;
+                    $this->addNewTypeIntoList($wsdlTypes, $wsdlTypeName, $wsdlType);
                 // element can have a type attribute that refers to the name of the complex type to use
                 } else {
-                    // TODO only create classes for non default XML schema types???
-                    if ($prefix == $xmlSchemaPrefix
-                            && in_array($typeName, array_keys(XmlSchemaMapper::getAllTypes()))) {
+                    // TODO only create classes for non default XML schema types?
+                    if ($prefix == $xmlSchemaPrefix &&
+                        in_array($typeName, array_keys(XmlSchemaMapper::getAllTypes()))
+                    ) {
                         continue;
                     } else {
                         $wsdlType = array(
@@ -363,35 +424,39 @@ class WsdlParser
                             'parent' => $this->getPhpTypeForSchemaType($element->getAttribute('type'), $schema),
                             'properties' => array(),
                         );
-                        $wsdlTypes[$wsdlTypeName] = $wsdlType;
+                        $this->addNewTypeIntoList($wsdlTypes, $wsdlTypeName, $wsdlType);
                     }
                 }
             }
 
-            $complexTypes = $this->domXpath->query("//xsd:schema[@targetNamespace=\"{$targetNamespace}\"]/xsd:complexType");
+            $complexTypes = $this->domXpath->query(
+                "//xsd:schema[@targetNamespace=\"{$targetNamespace}\"]/xsd:complexType"
+            );
             /** @var DOMElement $element */
             foreach ($complexTypes as $complexType) {
                 $wsdlType = null;
-                $wsdlTypeName = rtrim($targetNamespace, '/').'/'.$complexType->getAttribute('name');
+                $wsdlTypeName = $this->trimTypeNs($targetNamespace).$complexType->getAttribute('name');
                 $wsdlType = $this->parseType(
                     $complexType,
                     $schema,
                     $namespace
                 );
-                $wsdlTypes[$wsdlTypeName] = $wsdlType;
+                $this->addNewTypeIntoList($wsdlTypes, $wsdlTypeName, $wsdlType);
             }
 
-            $simpleTypes = $this->domXpath->query("//xsd:schema[@targetNamespace=\"{$targetNamespace}\"]/xsd:simpleType");
+            $simpleTypes = $this->domXpath->query(
+                "//xsd:schema[@targetNamespace=\"{$targetNamespace}\"]/xsd:simpleType"
+            );
             /** @var DOMElement $element */
             foreach ($simpleTypes as $simpleType) {
                 $wsdlType = null;
-                $wsdlTypeName = rtrim($targetNamespace, '/').'/'.$simpleType->getAttribute('name');
+                $wsdlTypeName = $this->trimTypeNs($targetNamespace).$simpleType->getAttribute('name');
                 $wsdlType = $this->parseType(
                     $simpleType,
                     $schema,
                     $namespace
                 );
-                $wsdlTypes[$wsdlTypeName] = $wsdlType;
+                $this->addNewTypeIntoList($wsdlTypes, $wsdlTypeName, $wsdlType);
             }
         }
 
@@ -457,7 +522,7 @@ class WsdlParser
         }
 
         if (null !== $simpleType) {
-            $property = array('name' => '_');
+            $property = array('name' => $this->options['empty_parameter_name']);
             $this->resolveRestrictions($simpleType, $property);
             $property['phpType'] = $this->getPhpTypeForSchemaType($property['wsdlType'], $schema);
             $property['isNull'] = (bool) $type->getAttribute('nillable');
@@ -467,7 +532,12 @@ class WsdlParser
             if (0 < $simpleContent->length) {
                 $extension = $type->getElementsByTagNameNS(Helper::NS_XML_SCHEMA, 'extension')->item(0);
                 if (null !== $extension) {
-                    $property = $this->makeProperty('_', $extension, 'base', $schema);
+                    $property = $this->makeProperty(
+                        $this->options['empty_parameter_name'],
+                        $extension,
+                        'base',
+                        $schema
+                    );
                     $wsdlType['properties'] = array($property);
                 }
 
@@ -702,6 +772,23 @@ class WsdlParser
         $namespace = rtrim($namespace, '\\');
 
         return $namespace;
+    }
+
+    /**
+     * Trim namespace (url)
+     *
+     * @param string $ns
+     *
+     * @return string
+     */
+    private function trimTypeNs($ns)
+    {
+        // Disable url to namespace conversion by --wsdl2java_style parameter
+        if (!$this->options['wsdl2java_style']) {
+            return '';
+        }
+
+        return rtrim($ns, '/') . '/';
     }
 
     /**
